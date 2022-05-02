@@ -83,10 +83,11 @@ func GatewayOption(paths ...string) ServeOption {
 	}
 }
 
-func VersionOption() ServeOption {
+func VersionOption(UserAgentVersion, CurrentCommit string) ServeOption {
 	return func(a API, cfg *GatewayConfig, _ net.Listener, mux *http.ServeMux) (*http.ServeMux, error) {
 		mux.HandleFunc("/version", func(w http.ResponseWriter, r *http.Request) {
-			//fmt.Fprintf(w, "Commit: %s\n", version.CurrentCommit)
+			fmt.Fprintf(w, "Commit: %s\n", CurrentCommit)
+			fmt.Fprintf(w, "Client Version: %s\n", UserAgentVersion)
 			fmt.Fprintf(w, "Protocol Version: %s\n", id.LibP2PVersion)
 		})
 		return mux, nil

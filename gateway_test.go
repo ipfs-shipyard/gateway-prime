@@ -63,7 +63,7 @@ func newTestServerAndNode(t *testing.T, ns mock.Namesys) (*httptest.Server, API,
 		ts.Listener,
 		HostnameOption(),
 		GatewayOption("/ipfs", "/ipns"),
-		VersionOption(),
+		VersionOption("go-ipfs/0.13.0-dev/unknown", "theshortcommithash"),
 	)
 	if err != nil {
 		t.Fatal(err)

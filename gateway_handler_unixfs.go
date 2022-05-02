@@ -32,16 +32,23 @@ func (i *gatewayHandler) serveUnixFS(ctx context.Context, w http.ResponseWriter,
 	err := fetchSession.NodeMatching(ctx, basicnode.NewLink(cidlink.Link{Cid: resolvedPath.Cid()}), sel, func(_ fetcher.FetchResult) error { return nil })
 	if err != nil {
 		webError(w, "ipfs cat "+html.EscapeString(contentPath.String()), err, http.StatusNotFound)
+		return
 	}
 	f := i.api.FetcherForSession(ls)
 	proto, _ := f.PrototypeFromLink(cidlink.Link{Cid: resolvedPath.Cid()})
 	node, err := ls.Load(ipld.LinkContext{Ctx: ctx}, cidlink.Link{Cid: resolvedPath.Cid()}, proto)
 	if err != nil {
 		webError(w, "ipfs cat "+html.EscapeString(contentPath.String()), err, http.StatusNotFound)
+		return
+	}
+	if node == nil {
+		webError(w, "ipfs cat "+html.EscapeString(contentPath.String()), err, http.StatusNotFound)
+		return
 	}
 	unode, err := unixfsnode.Reify(linking.LinkContext{Ctx: ctx}, node, ls)
 	if err != nil {
 		webError(w, "ipfs cat "+html.EscapeString(contentPath.String()), err, http.StatusNotFound)
+		return
 	}
 
 	// Handling Unixfs file

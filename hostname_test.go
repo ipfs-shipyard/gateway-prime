@@ -58,7 +58,7 @@ func TestToSubdomainURL(t *testing.T) {
 		{httpsRequest, "dweb.link", "/ipns/dnslink.long-name.example.com", "https://dnslink-long--name-example-com.ipns.dweb.link/", nil},
 		{httpsProxiedRequest, "dweb.link", "/ipns/dnslink.long-name.example.com", "https://dnslink-long--name-example-com.ipns.dweb.link/", nil},
 	} {
-		url, err := toSubdomainURL(test.gwHostname, test.path, test.request)
+		url, err := toSubdomainURL(test.gwHostname, test.path, test.request, &sys)
 		if url != test.url || !equalError(err, test.err) {
 			t.Errorf("(%s, %s) returned (%s, %v), expected (%s, %v)", test.gwHostname, test.path, url, err, test.url, test.err)
 		}
