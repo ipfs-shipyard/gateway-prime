@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ipfs-shipyard/gateway-prime/api"
 	"github.com/ipfs-shipyard/gateway-prime/mock"
 	"github.com/ipfs/go-cid"
 	quickbuilder "github.com/ipfs/go-unixfsnode/data/builder/quick"
@@ -47,7 +49,7 @@ func doWithoutRedirect(req *http.Request) (*http.Response, error) {
 	return res, nil
 }
 
-func newTestServerAndNode(t *testing.T, ns mock.Namesys) (*httptest.Server, API, context.Context) {
+func newTestServerAndNode(t *testing.T, ns mock.Namesys) (*httptest.Server, api.API, context.Context) {
 	a := mock.API{}
 	a.Resolver = ns
 
@@ -56,6 +58,13 @@ func newTestServerAndNode(t *testing.T, ns mock.Namesys) (*httptest.Server, API,
 	dh := &delegatedHandler{}
 	ts := httptest.NewServer(dh)
 	t.Cleanup(func() { ts.Close() })
+
+	// store an empty directory. some tests expect this.
+	ls := a.NewSession(context.Background())
+	quickbuilder.Store(ls, func(b *quickbuilder.Builder) error {
+		b.NewMapDirectory(map[string]quickbuilder.Node{})
+		return nil
+	})
 
 	var err error
 	dh.Handler, err = makeHandler(&a,
@@ -139,8 +148,8 @@ func TestGatewayGet(t *testing.T) {
 		t.Fatal(err)
 	}
 	k := l.(cidlink.Link).Cid
-	ns["/ipns/example.com"] = k.String()
-	ns["/ipns/working.example.com"] = k.String()
+	ns["/ipns/example.com"] = "/ipfs/" + k.String()
+	ns["/ipns/working.example.com"] = "/ipfs/" + k.String()
 	ns["/ipns/double.example.com"] = "/ipns/working.example.com"
 	ns["/ipns/triple.example.com"] = "/ipns/double.example.com"
 	ns["/ipns/broken.example.com"] = "/ipns/" + k.String()
@@ -155,7 +164,7 @@ func TestGatewayGet(t *testing.T) {
 
 	errs := make(mock.NamesysErrors)
 	errs["/ipns/nxdomain.example.com"] = errors.New("could not resolve name")
-	errs["/ipns/\\r\\n\\r\\nhello"] = errors.New("could not resolve name")
+	errs["/ipns/\r\n\r\nhello"] = errors.New("could not resolve name")
 	api.(*mock.API).ResolverFailures = errs
 
 	t.Log(ts.URL)
@@ -561,6 +570,8 @@ func TestGoGetSupport(t *testing.T) {
 	}
 
 	if res.StatusCode != 200 {
+		b, _ := ioutil.ReadAll(res.Body)
+		fmt.Printf("err: %s\n", b)
 		t.Errorf("status is %d, expected 200", res.StatusCode)
 	}
 }

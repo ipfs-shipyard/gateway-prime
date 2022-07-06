@@ -19,7 +19,7 @@ func TestToSubdomainURL(t *testing.T) {
 	sys := mock.API{}
 	sys.Resolver = ns
 	ls := sys.NewSession(context.Background())
-	lnk, err := ls.Store(ipld.LinkContext{}, cidlink.LinkPrototype{}, basicnode.NewString("hello world"))
+	lnk, err := ls.Store(ipld.LinkContext{}, basicLinkProto, basicnode.NewString("hello world"))
 	if err != nil {
 		t.Fatal(err)
 	}

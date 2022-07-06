@@ -6,6 +6,7 @@ import (
 	"time"
 
 	ocprom "contrib.go.opencensus.io/exporter/prometheus"
+	"github.com/ipfs-shipyard/gateway-prime/api"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opencensus.io/stats/view"
@@ -14,7 +15,7 @@ import (
 
 // MetricsScrapingOption adds the scraping endpoint which Prometheus uses to fetch metrics.
 func MetricsScrapingOption(path string) ServeOption {
-	return func(_ API, _ *GatewayConfig, _ net.Listener, mux *http.ServeMux) (*http.ServeMux, error) {
+	return func(_ api.API, _ *GatewayConfig, _ net.Listener, mux *http.ServeMux) (*http.ServeMux, error) {
 		mux.Handle(path, promhttp.HandlerFor(prometheus.DefaultGatherer, promhttp.HandlerOpts{}))
 		return mux, nil
 	}
@@ -22,7 +23,7 @@ func MetricsScrapingOption(path string) ServeOption {
 
 // This adds collection of OpenCensus metrics
 func MetricsOpenCensusCollectionOption() ServeOption {
-	return func(_ API, _ *GatewayConfig, _ net.Listener, mux *http.ServeMux) (*http.ServeMux, error) {
+	return func(_ api.API, _ *GatewayConfig, _ net.Listener, mux *http.ServeMux) (*http.ServeMux, error) {
 		log.Info("Init OpenCensus")
 
 		promRegistry := prometheus.NewRegistry()
@@ -51,7 +52,7 @@ func MetricsOpenCensusCollectionOption() ServeOption {
 
 // MetricsCollectionOption adds collection of net/http-related metrics.
 func MetricsCollectionOption(handlerName string) ServeOption {
-	return func(_ API, _ *GatewayConfig, _ net.Listener, mux *http.ServeMux) (*http.ServeMux, error) {
+	return func(_ api.API, _ *GatewayConfig, _ net.Listener, mux *http.ServeMux) (*http.ServeMux, error) {
 		// Adapted from github.com/prometheus/client_golang/prometheus/http.go
 		// Work around https://github.com/prometheus/client_golang/pull/311
 		opts := prometheus.SummaryOpts{
