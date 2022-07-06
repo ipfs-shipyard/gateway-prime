@@ -2,9 +2,11 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/ipfs-shipyard/gateway-prime/api"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-fetcher"
 	ipfspath "github.com/ipfs/go-path"
@@ -206,7 +208,7 @@ func (p *resolvedPath) Remainder() string {
 }
 
 type factory struct {
-	a    API
+	a    api.API
 	mode string
 }
 
@@ -218,7 +220,9 @@ func (f *factory) NewSession(ctx context.Context) fetcher.Fetcher {
 	return f.a.FetcherForSession(ls)
 }
 
-func ResolvePath(ctx context.Context, a API, p Path) (Resolved, error) {
+var ErrOffline = errors.New("this action must be run in online mode, try running 'ipfs daemon' first")
+
+func ResolvePath(ctx context.Context, a api.API, p Path) (Resolved, error) {
 	if _, ok := p.(Resolved); ok {
 		return p.(Resolved), nil
 	}
@@ -226,15 +230,14 @@ func ResolvePath(ctx context.Context, a API, p Path) (Resolved, error) {
 		return nil, err
 	}
 
-	ipath := ipfspath.Path(p.String())
-	/* //todo: ipns
-	ipath, err := resolve.ResolveIPNS(ctx, api.namesys, ipath)
-	if err == resolve.ErrNoNamesys {
-		return nil, coreiface.ErrOffline
-	} else if err != nil {
+	rpath, err := a.Resolve(ctx, p.String())
+	if err != nil {
+		if strings.Contains(err.Error(), "can't resolve ipns entry") {
+			return nil, ErrOffline
+		}
 		return nil, err
 	}
-	*/
+	ipath := ipfspath.Path(rpath)
 
 	if ipath.Segments()[0] != "ipfs" && ipath.Segments()[0] != "ipld" {
 		return nil, fmt.Errorf("unsupported path namespace: %s", p.Namespace())

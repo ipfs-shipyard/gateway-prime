@@ -3,11 +3,13 @@ package gateway
 import (
 	"net"
 	"net/http"
+
+	"github.com/ipfs-shipyard/gateway-prime/api"
 )
 
 func RedirectOption(path string, redirect string) ServeOption {
 	handler := &redirectHandler{redirect}
-	return func(a API, _ *GatewayConfig, _ net.Listener, mux *http.ServeMux) (*http.ServeMux, error) {
+	return func(a api.API, _ *GatewayConfig, _ net.Listener, mux *http.ServeMux) (*http.ServeMux, error) {
 		if len(path) > 0 {
 			mux.Handle("/"+path+"/", handler)
 		} else {

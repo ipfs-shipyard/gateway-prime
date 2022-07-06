@@ -4,9 +4,11 @@ go 1.18
 
 require (
 	contrib.go.opencensus.io/exporter/prometheus v0.4.1
+	github.com/dustin/go-humanize v1.0.0
 	github.com/gabriel-vasile/mimetype v1.4.0
 	github.com/ipfs/go-cid v0.2.0
 	github.com/ipfs/go-fetcher v1.6.1
+	github.com/ipfs/go-ipfs-files v0.0.3
 	github.com/ipfs/go-log v1.0.5
 	github.com/ipfs/go-path v0.3.0
 	github.com/ipfs/go-unixfsnode v1.4.1-0.20220502093700-f664db4b2168

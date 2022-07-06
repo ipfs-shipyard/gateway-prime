@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dustin/go-humanize"
 	"github.com/ipfs/go-cid"
-	"github.com/ipfs/go-fetcher"
-	gopath "github.com/ipfs/go-path"
-	"github.com/ipld/go-ipld-prime"
-	selectorparse "github.com/ipld/go-ipld-prime/traversal/selector/parse"
+	files "github.com/ipfs/go-ipfs-files"
+	"github.com/ipfs/go-path"
+	resolver "github.com/ipfs/go-path/resolver"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -21,7 +21,7 @@ import (
 // serveDirectory returns the best representation of UnixFS directory
 //
 // It will return index.html if present, or generate directory listing otherwise.
-func (i *gatewayHandler) serveDirectory(ctx context.Context, w http.ResponseWriter, r *http.Request, resolvedPath Resolved, contentPath Path, dir ipld.Node, begin time.Time, logger *zap.SugaredLogger) {
+func (i *gatewayHandler) serveDirectory(ctx context.Context, w http.ResponseWriter, r *http.Request, resolvedPath Resolved, contentPath Path, dir files.Directory, begin time.Time, logger *zap.SugaredLogger) {
 	ctx, span := otel.Tracer("gateway").Start(ctx, "gateway.serveDirectory", trace.WithAttributes(attribute.String("path", resolvedPath.String())))
 	defer span.End()
 
@@ -38,17 +38,12 @@ func (i *gatewayHandler) serveDirectory(ctx context.Context, w http.ResponseWrit
 	originalUrlPath := requestURI.Path
 
 	// Check if directory has index.html, if so, serveFile
-	if idx, err := dir.LookupByString("index.html"); err == nil {
-		idxPath := JoinPath(resolvedPath, "index.html")
-		// make sure we've loaded the index.
-		ls := i.api.NewSession(ctx)
-		fetchSession := i.api.FetcherForSession(ls)
-		err := fetchSession.NodeMatching(ctx, idx, selectorparse.CommonSelector_ExploreAllRecursively, func(_ fetcher.FetchResult) error { return nil })
-		if err != nil {
-			internalWebError(w, err)
-			return
-		}
-
+	idxPath := JoinPath(resolvedPath, "index.html")
+	ridx, err := ResolvePath(ctx, i.api, idxPath)
+	ls := i.api.NewSession(ctx)
+	idx, err := i.api.GetUnixFSNode(ls, ridx.Cid())
+	switch err.(type) {
+	case nil:
 		cpath := contentPath.String()
 		dirwithoutslash := cpath[len(cpath)-1] != '/'
 		goget := r.URL.Query().Get("go-get") == "1"
@@ -66,9 +61,20 @@ func (i *gatewayHandler) serveDirectory(ctx context.Context, w http.ResponseWrit
 			return
 		}
 
+		f, ok := idx.(files.File)
+		if !ok {
+			internalWebError(w, files.ErrNotReader)
+			return
+		}
+
 		logger.Debugw("serving index.html file", "path", idxPath)
 		// write to request
-		i.serveFile(ctx, w, r, resolvedPath, idxPath, idx, begin)
+		i.serveFile(ctx, w, r, resolvedPath, idxPath, f, begin)
+		return
+	case resolver.ErrNoLink:
+		logger.Debugw("no index.html; noop", "path", idxPath)
+	default:
+		internalWebError(w, err)
 		return
 	}
 
@@ -95,39 +101,45 @@ func (i *gatewayHandler) serveDirectory(ctx context.Context, w http.ResponseWrit
 		return
 	}
 
-	// storage for directory listing
-	var dirListing []directoryItem
-	dirit := dir.MapIterator()
-	for !dirit.Done() {
-		size := "?"
-		name, _, err := dirit.Next()
-		if err != nil {
-			internalWebError(w, err)
-			return
-		}
-		// TODO: size
-		//if s, err := dirit.Node().Size(); err == nil {
-		// Size may not be defined/supported. Continue anyways.
-		//	size = humanize.Bytes(uint64(s))
-		//}
-		nameStr, _ := name.AsString()
+	// Optimization 1:
+	// List children without fetching their root blocks (fast, but no size info)
+	entries, err := i.api.GetUnixFSDir(ls, dir)
+	if err != nil {
+		internalWebError(w, err)
+		return
+	}
 
-		resolved, err := ResolvePath(ctx, i.api, JoinPath(resolvedPath, nameStr))
-		if err != nil {
-			internalWebError(w, err)
-			return
-		}
-		hash := resolved.Cid().String()
+	de := make([]directoryItem, 0, len(entries))
 
-		// See comment above where originalUrlPath is declared.
-		di := directoryItem{
-			Size:      size,
-			Name:      nameStr,
-			Path:      gopath.Join([]string{originalUrlPath, nameStr}),
-			Hash:      hash,
-			ShortHash: shortHash(hash),
+	// Optimization 2: fetch exact sizes for dirs below FastDirIndexThreshold
+	if len(entries) < i.config.FastDirIndexThreshold {
+		dirit := dir.Entries()
+		linkNo := 0
+		for dirit.Next() {
+			size := entries[linkNo].GetSize()
+			if s, err := dirit.Node().Size(); err == nil {
+				// Size may not be defined/supported. Continue anyways.
+				size = humanize.Bytes(uint64(s))
+			}
+			de[linkNo] = directoryItem{
+				Size:      size,
+				Name:      entries[linkNo].GetName(),
+				Path:      entries[linkNo].GetPath(),
+				Hash:      entries[linkNo].GetHash(),
+				ShortHash: entries[linkNo].GetShortHash(),
+			}
+			linkNo++
 		}
-		dirListing = append(dirListing, di)
+	} else {
+		for i, e := range entries {
+			de[i] = directoryItem{
+				Size:      e.GetSize(),
+				Name:      e.GetName(),
+				Path:      e.GetPath(),
+				Hash:      e.GetHash(),
+				ShortHash: e.GetShortHash(),
+			}
+		}
 	}
 
 	// construct the correct back link
@@ -135,7 +147,7 @@ func (i *gatewayHandler) serveDirectory(ctx context.Context, w http.ResponseWrit
 	var backLink string = originalUrlPath
 
 	// don't go further up than /ipfs/$hash/
-	pathSplit := gopath.SplitList(contentPath.String())
+	pathSplit := path.SplitList(contentPath.String())
 	switch {
 	// keep backlink
 	case len(pathSplit) == 3: // url: /ipfs/$hash
@@ -153,10 +165,10 @@ func (i *gatewayHandler) serveDirectory(ctx context.Context, w http.ResponseWrit
 	}
 
 	size := "?"
-	//if s, err := dir.Size(); err == nil {
-	// Size may not be defined/supported. Continue anyways.
-	//	size = humanize.Bytes(uint64(s))
-	//}
+	if s, err := dir.Size(); err == nil {
+		// Size may not be defined/supported. Continue anyways.
+		size = humanize.Bytes(uint64(s))
+	}
 
 	hash := resolvedPath.Cid().String()
 
@@ -166,27 +178,27 @@ func (i *gatewayHandler) serveDirectory(ctx context.Context, w http.ResponseWrit
 	var gwURL string
 
 	// Get gateway hostname and build gateway URL.
-	if h, ok := r.Context().Value(GatewayHostnameKey).(string); ok {
+	if h, ok := r.Context().Value("gw-hostname").(string); ok {
 		gwURL = "//" + h
 	} else {
 		gwURL = ""
 	}
 
-	//dnslink := hasDNSLinkOrigin(gwURL, contentPath.String())
+	dnslink := hasDNSLinkOrigin(gwURL, contentPath.String())
 
 	// See comment above where originalUrlPath is declared.
 	tplData := listingTemplateData{
 		GatewayURL:  gwURL,
-		DNSLink:     false,
-		Listing:     dirListing,
+		DNSLink:     dnslink,
+		Listing:     de,
 		Size:        size,
 		Path:        contentPath.String(),
-		Breadcrumbs: breadcrumbs(contentPath.String(), false),
+		Breadcrumbs: breadcrumbs(contentPath.String(), dnslink),
 		BackLink:    backLink,
 		Hash:        hash,
 	}
 
-	logger.Debugw("request processed", "tplDataSize", size, "tplDataBackLink", backLink, "tplDataHash", hash)
+	logger.Debugw("request processed", "tplDataDNSLink", dnslink, "tplDataSize", size, "tplDataBackLink", backLink, "tplDataHash", hash)
 
 	if err := listingTemplate.Execute(w, tplData); err != nil {
 		internalWebError(w, err)
@@ -199,4 +211,14 @@ func (i *gatewayHandler) serveDirectory(ctx context.Context, w http.ResponseWrit
 
 func getDirListingEtag(dirCid cid.Cid) string {
 	return `"DirIndex-unknown_CID-` + dirCid.String() + `"`
+}
+
+// helper to detect DNSLink website context
+// (when hostname from gwURL is matching /ipns/<fqdn> in path)
+func hasDNSLinkOrigin(gwURL string, path string) bool {
+	if gwURL != "" {
+		fqdn := stripPort(strings.TrimPrefix(gwURL, "//"))
+		return strings.HasPrefix(path, "/ipns/"+fqdn)
+	}
+	return false
 }

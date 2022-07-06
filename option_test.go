@@ -16,9 +16,11 @@ type testcasecheckversion struct {
 	responseCode int
 }
 
+const testCaseAPIVersion = "/go-ipfs/0.1"
+
 func (tc testcasecheckversion) body() string {
 	if !tc.shouldHandle && tc.responseBody == "" {
-		return fmt.Sprintf("%s (%s)\n", errAPIVersionMismatch, tc.userAgent)
+		return fmt.Sprintf("%s (%s != %s)\n", errAPIVersionMismatch, testCaseAPIVersion, tc.userAgent)
 	}
 
 	return tc.responseBody
@@ -39,7 +41,7 @@ func TestCheckVersionOption(t *testing.T) {
 
 		called := false
 		root := http.NewServeMux()
-		mux, err := CheckVersionOption("/go-ipfs/0.1")(nil, nil, nil, root)
+		mux, err := CheckVersionOption(testCaseAPIVersion)(nil, nil, nil, root)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -67,4 +67,15 @@ type GatewayConfig struct {
 	// PublicGateways configures behavior of known public gateways.
 	// Each key is a fully qualified domain name (FQDN).
 	PublicGateways map[string]*GatewaySpec
+
+	// FastDirIndexThreshold defines a threshold of directory size under which
+	// the direct children of the directory will be loaded in order to provide
+	// more details (like the number of items in child directories).
+	FastDirIndexThreshold int
+}
+
+func setConfigDefaults(gc *GatewayConfig) {
+	if gc.FastDirIndexThreshold == 0 {
+		gc.FastDirIndexThreshold = 100
+	}
 }

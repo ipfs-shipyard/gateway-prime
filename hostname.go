@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/ipfs-shipyard/gateway-prime/api"
 	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/miekg/dns"
@@ -31,7 +32,7 @@ const dnsLabelMaxLength int = 63
 
 // HostnameOption rewrites an incoming request based on the Host header.
 func HostnameOption() ServeOption {
-	return func(a API, gc *GatewayConfig, _ net.Listener, mux *http.ServeMux) (*http.ServeMux, error) {
+	return func(a api.API, gc *GatewayConfig, _ net.Listener, mux *http.ServeMux) (*http.ServeMux, error) {
 		childMux := http.NewServeMux()
 
 		knownGateways := prepareKnownGateways(gc.PublicGateways)
@@ -301,7 +302,7 @@ func isDomainNameAndNotPeerID(hostname string) bool {
 }
 
 // isDNSLinkName returns bool if a valid DNS TXT record exist for provided host
-func isDNSLinkName(ctx context.Context, api API, host string) bool {
+func isDNSLinkName(ctx context.Context, api api.API, host string) bool {
 	dnslinkName := stripPort(host)
 
 	if !isDomainNameAndNotPeerID(dnslinkName) {
@@ -385,7 +386,7 @@ func toDNSLinkFQDN(dnsLabel string) (fqdn string) {
 }
 
 // Converts a hostname/path to a subdomain-based URL, if applicable.
-func toSubdomainURL(hostname, path string, r *http.Request, a API) (redirURL string, err error) {
+func toSubdomainURL(hostname, path string, r *http.Request, a api.API) (redirURL string, err error) {
 	var scheme, ns, rootID, rest string
 
 	query := r.URL.RawQuery

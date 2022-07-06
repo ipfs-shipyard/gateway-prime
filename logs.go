@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 
+	"github.com/ipfs-shipyard/gateway-prime/api"
 	lwriter "github.com/ipfs/go-log/writer"
 )
 
@@ -44,7 +45,7 @@ func (w *writeErrNotifier) Close() error {
 }
 
 func LogOption() ServeOption {
-	return func(_ API, _ *GatewayConfig, _ net.Listener, mux *http.ServeMux) (*http.ServeMux, error) {
+	return func(_ api.API, _ *GatewayConfig, _ net.Listener, mux *http.ServeMux) (*http.ServeMux, error) {
 		mux.HandleFunc("/logs", func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(200)
 			wnf, errs := newWriteErrNotifier(w)
